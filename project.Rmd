@@ -1,141 +1,174 @@
 ---
-title: "project"
-author: "Felipe Bardelli"
-date: "2024-02-14"
-output: html_document
+title: "Practical Machine Learning - Final Project"
+author: "Felipe Bardelli Dinardi"
+date: "14/02/2024"
+output: 
+        html_document:
+         keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+# Overview
+This is the final report for Coursera’s Practical Machine Learning course, as part of the Data Science Specialization track offered by John Hopkins. 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. This is the “classe” variable in the training set. We train 4 models: **Decision Tree**, **Random Forest**, **Gradient Boosted Trees**, **Support Vector Machine** using k-folds cross validation on the training set. We then predict using a validation set randomly selected from the training csv data to obtain the **accuracy** and **out of sample error rate**. Based on those numbers, we decide on the best model, and use it to predict 20 cases using the test csv set. (Data Links are Below - Local versions: Downloaded June 16/2020) 
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
----
-  title: "Course Project - Predict how well weight lifting exercises are done with Machine Learning"
-author: "Felipe Bardelli Dinardi"
-date: "14/02/2024"
-output:
-  html_document:
-  df_print: paged
----
-  
-  # Machine Learning Course Project - Predict how well weight lifting exercises are done with Machine Learning
-  ## Coursera course: Practical Machine Learning
-  
-  ### Load the data
-  
-  ```{r,warning=FALSE}
-library(readr)
-training <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
-testing <-read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
-```
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: (http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
 
-### Step 1: Clean data
+The training data for this project are available here:
 
-#### In training and testing set, remove columns which are all NA (since we cannot get any prediction value from them)
-```{r}
-library(dplyr)
-# keep the same columns in training & testing set
-testing<-testing[,colSums(is.na(testing))<nrow(testing)]
-li<-c(colnames(testing)[1:59],"classe")
-training<-training %>% select(li)
-rm(li)
-```
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
 
-#### Find columns which contain missing values
-```{r}
-colnames(training)[colSums(is.na(training))>0]
-```
+The test data are available here:
 
-#### Find how many NAs are in these columns
-```{r}
-sum(is.na(training$magnet_dumbbell_z))
-sum(is.na(training$magnet_forearm_y))
-sum(is.na(training$magnet_forearm_z))
-```
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
 
-#### Find row index for the NA rows
-```{r}
-which(is.na(training),arr.ind=TRUE)
-```
-It seems that there is only one row in the training set that contains NA (row 5373). We can handle it in two ways:
-1. Replace it with column mean
-2. Drop this row
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
 
-Considering the size of the training dataset, I'll use #2 and drop this row, resulting in 19621 rows in the training set (previously 19622).
-```{r}
-training<-training[-c(5373),]
-```
 
-#### Find out data type for each column, and only select numeric columns to build the model
-```{r}'''
-numeric<-lapply(training,is.numeric)
-# add a column for classe variable
-numeric$classe<-TRUE
-# remove non-numeric columns
-numeric$X1<-FALSE
-numeric$user_name<-FALSE
-numeric$raw_timestamp_part_1<-FALSE
-numeric$raw_timestamp_part_2<-FALSE
-numeric$cvtd_timestamp<-FALSE
-numeric$num_window<-FALSE
-numericCol<-unlist(numeric)
-training<-training[,numericCol]
-testing<-testing[,numericCol]
-colnames(testing)[53]<-"classe"
-rm(numeric)
-```
-### Step 2: split the training set into a sub-training (70%) and testing(30%) set
-```{r}''' 
+# Loading Data and Libraries
+Loading all the libraries and the data
+```{r results='hide', message=FALSE}
+library(lattice)
+library(ggplot2)
 library(caret)
-set.seed(1)
-inTrain<-createDataPartition(y=training$classe,p=0.7,list=FALSE)
-training_sub<-training[inTrain,]
-testing_sub<-training[-inTrain,]
+library(kernlab)
+library(rattle)
+library(corrplot)
+set.seed(1234)
 ```
 
-### Step 3: build model on the sub-training set
 ```{r}
-set.seed(1)
-# model 1: SVM
-#modFit1<-train(classe~.,method="svmRadial",data=training4)
-# model 2: gbm
-#modFit2<-train(classe~.,method="gbm",data=training4)
-# model 3: random forest
-#modFit3<-train(classe~.,method="rf",data=training4)
+traincsv <- read.csv("./data/pml-training.csv")
+testcsv <- read.csv("./data/pml-testing.csv")
 
-# I've commented out these models here because knitting them to html takes too much time (> 5 hours). Conslusion is that among the three models, random forest has the best performance, so we're using random forest to continue with the prediction. 
+dim(traincsv)
+dim(testcsv)
+```
 
-# Use parallel implementation to increase performance of the random forest model (it was taking too much time before)
-library(parallel)
-library(doParallel)
-cluster <-makeCluster(detectCores()-1)
-registerDoParallel(cluster)
+We see that there are 160 variables and 19622 observations in the training set, while 20 for the test set.
 
-# configure trainControl object
-fitControl<-trainControl(method="cv",number=20,allowParallel = TRUE)
 
-# develop training model with fitControl
-modFit<-train(classe~.,method="rf",data=training_sub,trControl=fitControl)
+# Cleaning the Data
 
-# de-register parallel processing cluster
-stopCluster(cluster)
-registerDoSEQ()
+Removing unnecessary variables. Starting with N/A variables.
+```{r}
+traincsv <- traincsv[,colMeans(is.na(traincsv)) < .9] #removing mostly na columns
+traincsv <- traincsv[,-c(1:7)] #removing metadata which is irrelevant to the outcome
+```
 
-# create a confusion matrix for the model on the sub-testing set to see how accurate the prediction is
-ConMatrix<-confusionMatrix(table(testing_sub$classe,predict(modFit,testing_sub)))
+Removing near zero variance variables.
+```{r nzv}
+nvz <- nearZeroVar(traincsv)
+traincsv <- traincsv[,-nvz]
+dim(traincsv)
+```
+
+Now that we have finished removing the unnecessary variables, we can now split the training set into a **validation** and sub **training** set. The testing set "testcsv" will be left alone, and used for the final quiz test cases. 
+```{r}
+inTrain <- createDataPartition(y=traincsv$classe, p=0.7, list=F)
+train <- traincsv[inTrain,]
+valid <- traincsv[-inTrain,]
 ```
 
 
-### Step 4: Prediction
+# Creating and Testing the Models
+Here we will test a few popular models including: **Decision Trees**, **Random Forest**, **Gradient Boosted Trees**, and **SVM**. This is probably more than we will need to test, but just out of curiosity and good practice we will run them for comparison.
+
+Set up control for training to use 3-fold cross validation. 
 ```{r}
-# predict
-pred<-predict(modFit,testing)
+control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+
+## Decision Tree
+
+**Model:** 
+
+```{r, cache=TRUE}
+mod_trees <- train(classe~., data=train, method="rpart", trControl = control, tuneLength = 5)
+fancyRpartPlot(mod_trees$finalModel)
+```
+
+**Prediction:**
+
+```{r}
+pred_trees <- predict(mod_trees, valid)
+cmtrees <- confusionMatrix(pred_trees, factor(valid$classe))
+cmtrees
+```
+
+## Random Forest
+
+```{r, cache=TRUE}
+mod_rf <- train(classe~., data=train, method="rf", trControl = control, tuneLength = 5)
+
+pred_rf <- predict(mod_rf, valid)
+cmrf <- confusionMatrix(pred_rf, factor(valid$classe))
+cmrf
+```
+
+## Gradient Boosted Trees
+
+```{r, cache=TRUE}
+mod_gbm <- train(classe~., data=train, method="gbm", trControl = control, tuneLength = 5, verbose = F)
+
+pred_gbm <- predict(mod_gbm, valid)
+cmgbm <- confusionMatrix(pred_gbm, factor(valid$classe))
+cmgbm
+```
+
+## Support Vector Machine
+
+```{r, cache=TRUE}
+mod_svm <- train(classe~., data=train, method="svmLinear", trControl = control, tuneLength = 5, verbose = F)
+
+pred_svm <- predict(mod_svm, valid)
+cmsvm <- confusionMatrix(pred_svm, factor(valid$classe))
+cmsvm
+```
+
+## Results (Accuracy & Out of Sample Error)
+
+```{r, echo=FALSE}
+models <- c("Tree", "RF", "GBM", "SVM")
+accuracy <- round(c( cmtrees$overall[1], cmrf$overall[1], cmgbm$overall[1], cmsvm$overall[1]),3) #accuracy
+oos_error <- 1 - accuracy #out of sample error
+
+data.frame(accuracy = accuracy, oos_error = oos_error, row.names = models)
+```
+
+**The best model is the Random Forest model, with `r cmrf$overall[1]` accuracy and `r 1-cmrf$overall[1]` out of sample error rate. We find that to be a sufficient enough model to use for our test sets. ** 
+
+
+# Predictions on Test Set
+
+Running our test set to predict the classe (5 levels) outcome for 20 cases with the **Random Forest** model.
+```{r}
+pred <- predict(mod_rf, testcsv)
+print(pred)
+```
+
+
+# Appendix
+
+Github Repo: [Github](https://github.com/b-zhang93/Practical-Machine-Learning-Project)
+
+correlation matrix of variables in training set
+```{r}
+corrPlot <- cor(train[, -length(names(train))])
+corrplot(corrPlot, method="color")
+```
+
+Plotting the models
+```{r}
+plot(mod_trees)
+plot(mod_rf)
+plot(mod_gbm)
 ```
 
 ### Step 5: (Optional) Check importance of features
