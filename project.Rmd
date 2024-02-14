@@ -1,7 +1,7 @@
 ---
 title: "Practical Machine Learning - Final Project"
 author: "Felipe Bardelli Dinardi"
-date: "14/02/2024"
+date: "02/14/2024"
 output: 
         html_document:
          keep_md: yes
@@ -154,25 +154,3 @@ print(pred)
 ```
 
 
-# Appendix
-
-Github Repo: [Github](https://github.com/b-zhang93/Practical-Machine-Learning-Project)
-
-correlation matrix of variables in training set
-```{r}
-corrPlot <- cor(train[, -length(names(train))])
-corrplot(corrPlot, method="color")
-```
-
-Plotting the models
-```{r}
-plot(mod_trees)
-plot(mod_rf)
-plot(mod_gbm)
-```
-
-### Step 5: (Optional) Check importance of features
-```{r}
-importance<-varImp(modFit,scale=FALSE)
-plot(importance)
-```
